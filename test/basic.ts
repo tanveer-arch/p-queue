@@ -323,6 +323,34 @@ test('.add() - the task signal aborts on the user signal when a timeout is set',
 	assert.equal(taskSignal?.reason, reason);
 });
 
+test('.add() rejects when the signal aborts in the turn in which a synchronous task returned', async () => {
+	const queue = new PQueue();
+	const controller = new AbortController();
+	const result = queue.add(() => 'value', {signal: controller.signal});
+	assert.equal(queue.pending, 1);
+	controller.abort(new Error('reason'));
+	await assert.rejects(result, {message: 'reason'});
+});
+
+for (const [name, options, function_] of [
+	['a shared signal', {shared: true}, () => 'value'],
+	['a queue timeout', {timeout: 1000}, () => 'value'],
+	['a shared signal and a queue timeout', {shared: true, timeout: 1000}, () => 'value'],
+	['an async function', {}, async () => 'value'],
+	// eslint-disable-next-line @typescript-eslint/promise-function-async -- The case is a plain function that returns a promise.
+	['a function that returns `Promise.resolve(value)`', {}, () => Promise.resolve('value')],
+] as const) {
+	test(`.add() rejects when the signal aborts in the turn in which the task returned: ${name}`, async () => {
+		const queue = new PQueue({timeout: 'timeout' in options ? options.timeout : undefined});
+		const controller = new AbortController();
+		const result = queue.add(function_, {signal: controller.signal});
+		const other = 'shared' in options ? queue.add(() => 'other', {signal: controller.signal}) : undefined;
+		controller.abort(new Error('reason'));
+		await assert.rejects(result, {message: 'reason'});
+		await other?.catch(() => undefined);
+	});
+}
+
 test('.add() - timeout timer is cleared when the task completes', async () => {
 	// A timer that is not cleared keeps the process alive until the timeout.
 	const timerCount = countTimers();

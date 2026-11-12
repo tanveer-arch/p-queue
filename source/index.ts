@@ -708,6 +708,12 @@ export default class PQueue<QueueType extends Queue<RunFunction, EnqueueOptionsT
 					}
 
 					const result = await operation;
+
+					// The signal may have aborted in the turn in which a synchronous task returned, after the race already queued the task's fulfilment. The task is still running until its result is delivered, so the abort wins, like it does for an async task.
+					if (signal?.aborted) {
+						throw signal.reason as Error;
+					}
+
 					resolve(result);
 					this.#emit('completed', result);
 				} catch (error: unknown) {
